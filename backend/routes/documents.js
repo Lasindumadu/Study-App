@@ -17,14 +17,37 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 
+    console.log('File uploaded:', file.originalname, 'Mimetype:', file.mimetype, 'Path:', file.path);
+
     let text = '';
     if (file.mimetype === 'application/pdf') {
-      const dataBuffer = fs.readFileSync(file.path);
-      const data = await pdfParse(dataBuffer);
-      text = data.text;
+      console.log('Processing PDF file');
+      try {
+        const dataBuffer = fs.readFileSync(file.path);
+        const data = await pdfParse(dataBuffer);
+        text = data.text;
+        console.log('PDF text extracted, length:', text.length);
+      } catch (pdfErr) {
+        console.error('Error parsing PDF:', pdfErr.message);
+        return res.status(400).json({ msg: 'Invalid PDF file' });
+      }
+    } else if (file.mimetype.startsWith('text/')) {
+      console.log('Processing text file');
+      try {
+        text = fs.readFileSync(file.path, 'utf8');
+        console.log('Text file read, length:', text.length);
+      } catch (textErr) {
+        console.error('Error reading text file:', textErr.message);
+        return res.status(400).json({ msg: 'Invalid text file' });
+      }
     } else {
-      // For text files
-      text = fs.readFileSync(file.path, 'utf8');
+      console.log('Unsupported file type:', file.mimetype);
+      return res.status(400).json({ msg: 'Unsupported file type. Only PDF and text files are allowed.' });
+    }
+
+    if (!text || text.trim().length === 0) {
+      console.log('No text extracted from file');
+      return res.status(400).json({ msg: 'No readable text found in the file' });
     }
 
     const document = new Document({
@@ -34,11 +57,14 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
       text,
     });
 
+    console.log('Saving document to DB');
     await document.save();
+    console.log('Document saved successfully');
     res.json(document);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Error in upload:', err.message);
+    console.error('Stack:', err.stack);
+    res.status(500).json({ msg: 'Server error', error: err.message });
   }
 });
 
