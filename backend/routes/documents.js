@@ -12,8 +12,14 @@ const upload = multer({ dest: 'uploads/' });
 // Upload document
 router.post('/upload', auth, upload.single('file'), async (req, res) => {
   try {
+    console.log('Upload request received');
+    console.log('req.user:', req.user ? req.user.id : 'No user');
+    console.log('req.file:', req.file ? 'File present' : 'No file');
+    console.log('req.body:', req.body);
+
     const file = req.file;
     if (!file) {
+      console.log('No file uploaded - returning 400');
       return res.status(400).json({ msg: 'No file uploaded' });
     }
 

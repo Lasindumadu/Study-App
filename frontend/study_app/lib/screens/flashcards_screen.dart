@@ -29,15 +29,31 @@ class _FlashcardsScreenState extends State<FlashcardsScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.token;
 
-    final response = await http.post(
-      Uri.parse('http://localhost:3000/api/flashcards/generate'),
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-      body: json.encode({'documentId': widget.documentId}),
+    // First, try to fetch existing flashcards
+    final fetchResponse = await http.get(
+      Uri.parse('http://localhost:3000/api/flashcards/${widget.documentId}'),
+      headers: {'Authorization': 'Bearer $token'},
     );
 
-    if (response.statusCode == 200) {
+    if (fetchResponse.statusCode == 200) {
+      final fetched = json.decode(fetchResponse.body);
+      if (fetched.isNotEmpty) {
+        setState(() {
+          _flashcards = fetched;
+        });
+        return;
+      }
+    }
+
+    // If no existing, generate new ones
+    final generateResponse = await http.post(
+      Uri.parse('http://localhost:3000/api/flashcards/generate/${widget.documentId}'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (generateResponse.statusCode == 200) {
       setState(() {
-        _flashcards = json.decode(response.body);
+        _flashcards = json.decode(generateResponse.body);
       });
     }
   }

@@ -44,9 +44,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     final token = authProvider.token;
 
     final response = await http.post(
-      Uri.parse('http://localhost:3000/api/summarize'),
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-      body: json.encode({'documentId': docId}),
+      Uri.parse('http://localhost:3000/api/summarize/$docId'),
+      headers: {'Authorization': 'Bearer $token'},
     );
 
     if (response.statusCode == 200) {
@@ -64,6 +63,18 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               },
               child: const Text('Speak'),
             ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          ],
+        ),
+      );
+    } else {
+      // Handle error
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to summarize document'),
+          actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
           ],
         ),

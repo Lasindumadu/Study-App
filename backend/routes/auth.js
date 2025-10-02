@@ -20,7 +20,7 @@ router.post('/register', async (req, res) => {
     user.password = await bcrypt.hash(password, salt);
     await user.save();
 
-    const payload = { userId: user.id };
+    const payload = { user: { id: user.id } };
     jwt.sign(payload, jwtSecret, { expiresIn: '1h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });
@@ -43,7 +43,7 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
-    const payload = { userId: user.id };
+    const payload = { user: { id: user.id } };
     jwt.sign(payload, jwtSecret, { expiresIn: '1h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });

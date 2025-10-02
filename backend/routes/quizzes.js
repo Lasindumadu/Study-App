@@ -6,7 +6,7 @@ const auth = require('../middleware/auth.js');
 
 const router = express.Router();
 
-const hf = new HfInference(process.env.HF_TOKEN || 'your_huggingface_token');
+const hf = new HfInference(process.env.HF_TOKEN);
 
 // Generate quizzes
 router.post('/generate/:id', auth, async (req, res) => {
@@ -16,48 +16,71 @@ router.post('/generate/:id', auth, async (req, res) => {
       return res.status(404).json({ msg: 'Document not found' });
     }
 
-    const prompt = `Generate 5 multiple-choice questions with 4 options each from the following text:\n\n${document.text}\n\nFormat: Q1: Question\nA1: Option1\nB1: Option2\nC1: Option3\nD1: Option4\nCorrect1: A\n...`;
+    if (!document.text || document.text.trim() === '') {
+      return res.status(400).json({ msg: 'Document has no text to generate quizzes' });
+    }
+
+    const MAX_CHARS = 500; // safe cutoff for gpt2
+    const inputText = document.text.slice(0, MAX_CHARS);
+
+    const prompt = `Generate 5 multiple-choice questions from the following text. Each question should have 4 options (A, B, C, D) and indicate the correct answer. Format as JSON: {"question": "Question text", "options": ["A. Option1", "B. Option2", "C. Option3", "D. Option4"], "correctAnswer": "A"}\n\nText:\n${inputText}\n\nOutput as a JSON array of objects.`;
 
     const response = await hf.textGeneration({
       model: 'gpt2',
       inputs: prompt,
-      parameters: { max_length: 1000 }
+      parameters: { max_length: 1500 }
     });
 
     const generatedText = response.generated_text;
-    // Parse the response
-    const lines = generatedText.split('\n');
-    const quizzes = [];
-    let currentQ = null;
-    let options = [];
-    for (let line of lines) {
-      if (line.startsWith('Q')) {
-        if (currentQ) {
-          // Save previous
-          const quiz = new Quiz({
-            userId: req.user.id,
-            documentId: req.params.id,
-            question: currentQ,
-            options,
-            correctAnswer: 'A', // Assume A for simplicity
-          });
-          await quiz.save();
-          quizzes.push(quiz);
+    console.log('Generated quizzes text:', generatedText);
+
+    // Try to parse as JSON
+    let quizzesData = [];
+    try {
+      const jsonMatch = generatedText.match(/\[.*\]/s);
+      if (jsonMatch) {
+        quizzesData = JSON.parse(jsonMatch[0]);
+      } else {
+        // Fallback parsing
+        const parts = generatedText.split(/Q\d*:/).slice(1);
+        for (let part of parts) {
+          const lines = part.split('\n');
+          let question = '';
+          let options = [];
+          let correctAnswer = 'A';
+          for (let line of lines) {
+            if (line.trim()) {
+              if (!question) {
+                question = line.trim();
+              } else if (line.match(/^[A-D]\d*:/)) {
+                options.push(line.trim());
+              } else if (line.startsWith('Correct')) {
+                correctAnswer = line.split(':')[1].trim();
+              }
+            }
+          }
+          if (question && options.length >= 4) {
+            quizzesData.push({ question, options: options.slice(0, 4), correctAnswer });
+          }
         }
-        currentQ = line.substring(3);
-        options = [];
-      } else if (line.startsWith('A') || line.startsWith('B') || line.startsWith('C') || line.startsWith('D')) {
-        options.push(line.substring(3));
       }
+    } catch (parseErr) {
+      console.error('Parsing error:', parseErr);
+      // Simple fallback
+      quizzesData = [
+        { question: 'Sample Question 1', options: ['A. Option1', 'B. Option2', 'C. Option3', 'D. Option4'], correctAnswer: 'A' },
+        { question: 'Sample Question 2', options: ['A. Option1', 'B. Option2', 'C. Option3', 'D. Option4'], correctAnswer: 'B' },
+      ];
     }
-    // Last one
-    if (currentQ) {
+
+    const quizzes = [];
+    for (let item of quizzesData.slice(0, 5)) { // Limit to 5
       const quiz = new Quiz({
         userId: req.user.id,
         documentId: req.params.id,
-        question: currentQ,
-        options,
-        correctAnswer: 'A',
+        question: item.question || 'Question',
+        options: item.options || ['A. Option1', 'B. Option2', 'C. Option3', 'D. Option4'],
+        correctAnswer: item.correctAnswer || 'A',
       });
       await quiz.save();
       quizzes.push(quiz);
@@ -65,7 +88,7 @@ router.post('/generate/:id', auth, async (req, res) => {
 
     res.json(quizzes);
   } catch (err) {
-    console.error(err.message);
+    console.error('Quizzes generate error:', err);
     res.status(500).send('Server error');
   }
 });

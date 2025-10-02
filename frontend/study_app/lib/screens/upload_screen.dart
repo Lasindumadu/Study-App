@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -85,7 +86,7 @@ class _UploadScreenState extends State<UploadScreen> {
     );
     request.headers['Authorization'] = 'Bearer $token';
 
-    request.files.add(http.MultipartFile.fromBytes('file', _fileBytes!, filename: _fileName));
+    request.files.add(http.MultipartFile.fromBytes('file', _fileBytes!, filename: _fileName, contentType: MediaType('application', 'pdf')));
 
     var response = await request.send();
 
@@ -93,6 +94,40 @@ class _UploadScreenState extends State<UploadScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload successful')));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+    }
+  }
+
+  void _summarizePDF() async {
+    if (_fileName == null || _fileBytes == null) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.token;
+
+    var request = http.MultipartRequest(
+      'POST',
+      Uri.parse('http://localhost:3000/api/summarize/pdf'),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+
+    request.files.add(http.MultipartFile.fromBytes('file', _fileBytes!, filename: _fileName, contentType: MediaType('application', 'pdf')));
+
+    var response = await request.send();
+    var responseBody = await response.stream.bytesToString();
+    var jsonResponse = json.decode(responseBody);
+
+    if (response.statusCode == 200) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('PDF Summary'),
+          content: Text(jsonResponse['summary']),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          ],
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Summarize failed: ${jsonResponse['msg']}')));
     }
   }
 
@@ -150,6 +185,11 @@ class _UploadScreenState extends State<UploadScreen> {
             ElevatedButton(
               onPressed: (_fileName != null && _fileBytes != null && !_isLoadingFile) ? _uploadFile : null,
               child: const Text('Upload PDF'),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: (_fileName != null && _fileBytes != null && !_isLoadingFile) ? _summarizePDF : null,
+              child: const Text('Summarize PDF'),
             ),
             const Divider(height: 40),
             // Text Input Section
